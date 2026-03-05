@@ -1,0 +1,29 @@
+@startuml
+skinparam backgroundColor #EEE
+
+actor Host
+actor Guest
+cloud "Render Hosting" as CLOUD
+
+component "FastAPI Backend\n(Session Manager)" as API
+component "Frontend UI\n(Responsive Chat)" as UI
+component "WebSocket\nLive Channel" as WS
+component "LiteLLM Proxy\n(OpenAI-compatible model)" as AI
+
+Host --> CLOUD : Open app URL
+Guest --> CLOUD : Open session URL
+
+CLOUD --> API
+API --> UI
+
+Host --> WS : Connect (role=host)
+Guest --> WS : Connect (role=guest)
+
+UI --> WS : Send message + role
+
+WS --> AI : Translate (based on language config)
+AI --> WS : Return translated text
+
+WS --> UI : Broadcast\n(original + translated)
+
+@enduml

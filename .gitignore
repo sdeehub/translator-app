@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environment
+venv/
+.env/
+
+# OS
+.DS_Store
+
+# Logs
+*.log
+
+# Emacs backup and temporary files
+*~
+.*.elc
