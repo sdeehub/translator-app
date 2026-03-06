@@ -8,227 +8,247 @@
 
 <title>AI Chat Translator</title>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
 <style>
-* {
-    box-sizing: border-box;
+
+*{box-sizing:border-box}
+
+html,body{
+margin:0;
+padding:0;
+height:100%;
 }
 
-html, body {
-    margin: 0;
-    padding: 0;
-    height: 100%;
+body{
+font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+background:linear-gradient(135deg,#5f4bd8,#6b57e2);
+display:flex;
+justify-content:center;
+align-items:stretch;
 }
 
-body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    background: linear-gradient(135deg, #5f4bd8, #6b57e2);
-    display: flex;
-    justify-content: center;
-    align-items: stretch;
+/* APP */
+
+.chat-container{
+width:100%;
+height:100dvh;
+background:white;
+display:flex;
+flex-direction:column;
+position:relative;
 }
 
-/* =========================
-   Mobile Full Screen
-========================= */
+/* DESKTOP CARD */
 
-.chat-container {
-    width: 100%;
-    height: 100dvh;
-    background: white;
-    display: flex;
-    flex-direction: column;
+@media(min-width:768px){
+
+body{align-items:center}
+
+.chat-container{
+max-width:520px;
+height:92vh;
+border-radius:28px;
+overflow:hidden;
+box-shadow:0 20px 50px rgba(0,0,0,0.25);
 }
 
-/* =========================
-   Desktop Card Mode
-========================= */
-
-@media (min-width: 768px) {
-    body {
-        align-items: center;
-    }
-
-    .chat-container {
-        max-width: 520px;
-        height: 92vh;
-        border-radius: 28px;
-        overflow: hidden;
-        box-shadow: 0 20px 50px rgba(0,0,0,0.25);
-    }
 }
 
-/* =========================
-   Header
-========================= */
+/* HEADER */
 
-.chat-header {
-    background: #5f4bd8;
-    color: white;
-    padding: calc(18px + env(safe-area-inset-top)) 18px 18px 18px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
+.chat-header{
+background:#5f4bd8;
+color:white;
+padding:calc(18px + env(safe-area-inset-top)) 18px 18px 18px;
+display:flex;
+justify-content:space-between;
+align-items:center;
 }
 
-.chat-header h3 {
-    margin: 0;
-    font-size: 16px;
-    font-weight: 500;
+.chat-header h3{
+margin:0;
+font-size:16px;
+font-weight:500;
 }
 
-/* =========================
-   Plus Button
-========================= */
+/* PLUS BUTTON */
 
-.plus-btn {
-    width: 38px;
-    height: 38px;
-    border-radius: 50%;
-    background: white;
-    color: #5f4bd8;
-    font-size: 22px;
-    border: none;
-    cursor: pointer;
-    font-weight: bold;
-    transition: transform 0.15s ease;
+.plus-btn{
+width:38px;
+height:38px;
+border-radius:50%;
+background:white;
+color:#5f4bd8;
+font-size:22px;
+border:none;
+cursor:pointer;
 }
 
-.plus-btn:hover {
-    transform: scale(1.1);
+/* CHAT BODY */
+
+.chat-box{
+flex:1;
+padding:18px;
+overflow-y:auto;
+background:#f5f6fa;
+display:flex;
+flex-direction:column;
 }
 
-/* =========================
-   Chat Body
-========================= */
-
-.chat-box {
-    flex: 1;
-    padding: 18px;
-    overflow-y: auto;
-    background: #f5f6fa;
+.chat-messages{
+display:flex;
+flex-direction:column;
 }
 
-.chat-messages {
-    display: flex;
-    flex-direction: column;
+/* anchor bottom trick */
+
+.chat-messages::after{
+content:"";
+margin-top:auto;
 }
 
-/* =========================
-   Message Bubbles
-========================= */
+/* MESSAGE */
 
-.message {
-    max-width: 80%;
-    padding: 12px 14px;
-    margin-bottom: 12px;
-    border-radius: 18px;
-    font-size: 14px;
-    line-height: 1.45;
-    box-shadow: 0 3px 8px rgba(0,0,0,0.05);
-    word-wrap: break-word;
-    animation: fadeIn 0.2s ease-in;
+.message{
+max-width:80%;
+padding:12px 14px;
+margin-bottom:12px;
+border-radius:18px;
+font-size:14px;
+line-height:1.45;
+box-shadow:0 3px 8px rgba(0,0,0,0.05);
+word-wrap:break-word;
 }
 
-.host {
-    align-self: flex-end;
-    background: white;
-    border-bottom-right-radius: 6px;
+.host{
+align-self:flex-end;
+background:white;
+border-bottom-right-radius:6px;
 }
 
-.guest {
-    align-self: flex-start;
-    background: #e9e7ff;
-    border-bottom-left-radius: 6px;
+.guest{
+align-self:flex-start;
+background:#e9e7ff;
+border-bottom-left-radius:6px;
 }
 
-.system {
-    align-self: center;
-    background: #ddd;
-    font-size: 12px;
+.system{
+align-self:center;
+background:#ddd;
+font-size:12px;
 }
 
-/* Original + translated */
+/* TEXT STYLE */
 
-.original-text {
-    font-weight: 500;
+.original-text{
+font-weight:400;
+opacity:0.65;
 }
 
-.translated-text {
-    margin-top: 6px;
-    font-size: 12px;
-    opacity: 0.75;
+.translated-text{
+margin-top:6px;
+font-size:13px;
+font-weight:500;
 }
 
-.divider {
-    height: 1px;
-    margin: 6px 0;
-    background: linear-gradient(
-        to right,
-        transparent,
-        rgba(0,0,0,0.08),
-        transparent
-    );
+.divider{
+height:1px;
+margin:6px 0;
+background:rgba(0,0,0,0.08);
 }
 
-/* =========================
-   Input Area
-========================= */
+/* INPUT */
 
-.chat-input {
-    display: flex;
-    padding: 14px 14px calc(14px + env(safe-area-inset-bottom)) 14px;
-    background: white;
-    border-top: 1px solid #eee;
+.chat-input{
+display:flex;
+padding:14px 14px calc(14px + env(safe-area-inset-bottom)) 14px;
+background:white;
+border-top:1px solid #eee;
+gap:10px;
 }
 
-.chat-input input {
-    flex: 1;
-    border: none;
-    padding: 12px;
-    border-radius: 24px;
-    background: #f1f1f1;
-    outline: none;
-    font-size: 14px;
+.chat-input textarea{
+flex:1;
+resize:none;
+border:none;
+padding:12px;
+border-radius:24px;
+background:#f1f1f1;
+outline:none;
+font-size:14px;
+font-family:inherit;
+line-height:1.4;
+max-height:120px;
+overflow-y:auto;
 }
 
-.chat-input button {
-    margin-left: 10px;
-    background: #5f4bd8;
-    color: white;
-    border: none;
-    width: 42px;
-    height: 42px;
-    border-radius: 50%;
-    cursor: pointer;
-    font-size: 18px;
-    transition: transform 0.1s ease;
+.chat-input textarea::placeholder{
+color:#999;
 }
 
-.chat-input button:hover {
-    transform: scale(1.05);
+.chat-input button{
+background:#5f4bd8;
+color:white;
+border:none;
+width:42px;
+height:42px;
+border-radius:50%;
+cursor:pointer;
+font-size:18px;
 }
 
-/* Invite link */
+/* SCROLL BUTTON */
 
-.invite-link {
-    font-size: 11px;
-    margin-top: 6px;
-    word-break: break-all;
-    opacity: 0.8;
+.scroll-btn{
+position:absolute;
+bottom:90px;
+left:50%;
+transform:translateX(-50%);
+width:40px;
+height:40px;
+border-radius:50%;
+background:#5f4bd8;
+color:white;
+display:none;
+align-items:center;
+justify-content:center;
+font-size:18px;
+cursor:pointer;
+box-shadow:0 4px 10px rgba(0,0,0,0.25);
 }
 
-/* Animation */
-
-@keyframes fadeIn {
-    from {
-        opacity: 0;
-        transform: translateY(4px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
+.scroll-badge{
+position:absolute;
+top:-4px;
+right:-4px;
+background:red;
+color:white;
+font-size:10px;
+width:16px;
+height:16px;
+border-radius:50%;
+display:flex;
+align-items:center;
+justify-content:center;
 }
+
+/* INVITE */
+
+.invite-link{
+font-size:11px;
+margin-top:6px;
+word-break:break-all;
+opacity:0.8;
+}
+
+/* QR */
+
+.qr-box{
+margin-top:10px;
+align-self:center;
+}
+
 </style>
 </head>
 
@@ -236,150 +256,221 @@ body {
 
 <div class="chat-container">
 
-    <div class="chat-header">
-        <h3 id="headerTitle">AI Translator</h3>
-        <button id="plusBtn" class="plus-btn" onclick="startSession()">+</button>
-    </div>
+<div class="chat-header">
+<h3 id="headerTitle">AI Translator</h3>
+<button id="plusBtn" class="plus-btn" onclick="startSession()">+</button>
+</div>
 
-    <div class="chat-box">
-        <div id="messages" class="chat-messages"></div>
-    </div>
+<div class="chat-box">
+<div id="messages" class="chat-messages"></div>
+</div>
 
-    <div class="chat-input">
-        <input id="messageInput" placeholder="Type a message..." />
-        <button onclick="sendMessage()">➤</button>
-    </div>
+<div id="scrollBtn" class="scroll-btn">
+↓
+<div id="scrollBadge" class="scroll-badge">1</div>
+</div>
+
+<div class="chat-input">
+<textarea id="messageInput" rows="1" placeholder="Type a message..."></textarea>
+<button onclick="sendMessage()">➤</button>
+</div>
 
 </div>
 
 <script>
-let sessionId = "SESSION_ID";
-let role = "ROLE";
-let ws = null;
-let sessionEnded = false;
 
-// =========================
-// Guest Auto Mode
-// =========================
+let sessionId="SESSION_ID"
+let role="ROLE"
+let ws=null
+let sessionEnded=false
 
-if (role === "guest") {
-    document.getElementById("plusBtn").style.display = "none";
-    document.getElementById("headerTitle").innerText = "Guest Session";
-    connectWebSocket();
+const messages=document.getElementById("messages")
+const scrollBtn=document.getElementById("scrollBtn")
+const badge=document.getElementById("scrollBadge")
+const input=document.getElementById("messageInput")
+const container=document.querySelector(".chat-box")
+
+let unread=0
+
+function isNearBottom(){
+
+const distance=
+container.scrollHeight-container.scrollTop-container.clientHeight
+
+return distance<80
+
 }
 
-// =========================
-// WebSocket
-// =========================
+function scrollToBottom(smooth=false){
 
-function connectWebSocket() {
-    ws = new WebSocket(
-        `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/${sessionId}/${role}`
-    );
+container.scrollTo({
+top:container.scrollHeight,
+behavior:smooth?"smooth":"auto"
+})
 
-    ws.onmessage = (event) => {
-        const data = JSON.parse(event.data);
+unread=0
+scrollBtn.style.display="none"
 
-	if (data.system) {
-	    if (data.system === "Session ended.") {
-		sessionEnded = true;
-	    }
-	    addSystemMessage(data.system);
-	    return;
-        }
-
-        if (data.from === role) {
-            addMessage(data.original, role);
-        } else {
-            addMessage(data.original, data.from, data.translated);
-        }
-    };
-
-    ws.onclose = () => {
-	if (!sessionEnded) {
-	    addSystemMessage("Disconnected.");
-	}
-    };
 }
 
-// =========================
-// Message UI
-// =========================
+scrollBtn.onclick=()=>scrollToBottom(true)
 
-function addMessage(originalText, sender, translatedText = null) {
-    const messages = document.getElementById("messages");
-    const msg = document.createElement("div");
+/* INPUT AUTO SIZE */
 
-    msg.classList.add("message", sender);
+input.addEventListener("input",()=>{
+input.style.height="auto"
+input.style.height=input.scrollHeight+"px"
+})
 
-    if (translatedText) {
-        msg.innerHTML = `
-            <div class="original-text">${originalText}</div>
-            <div class="divider"></div>
-            <div class="translated-text">${translatedText}</div>
-        `;
-    } else {
-        msg.innerHTML = `<div class="original-text">${originalText}</div>`;
-    }
+/* GUEST AUTO CONNECT */
 
-    messages.appendChild(msg);
-    messages.scrollTop = messages.scrollHeight;
+if(role==="guest"){
+
+document.getElementById("plusBtn").style.display="none"
+document.getElementById("headerTitle").innerText="Guest Session"
+connectWebSocket()
+
 }
 
-function addSystemMessage(text) {
-    const messages = document.getElementById("messages");
-    const msg = document.createElement("div");
-    msg.classList.add("message", "system");
-    msg.innerText = text;
-    messages.appendChild(msg);
+/* WEBSOCKET */
+
+function connectWebSocket(){
+
+ws=new WebSocket(
+`${location.protocol==="https:"?"wss":"ws"}://${location.host}/ws/${sessionId}/${role}`
+)
+
+ws.onmessage=(event)=>{
+
+const data=JSON.parse(event.data)
+
+if(data.system){
+
+if(data.system==="Session ended.") sessionEnded=true
+
+addSystemMessage(data.system)
+return
 }
 
-// =========================
-// Send Message
-// =========================
-
-function sendMessage() {
-    const input = document.getElementById("messageInput");
-
-    if (!input.value || !ws) return;
-
-    ws.send(input.value);
-    input.value = "";
+if(data.from===role){
+addMessage(data.original,role)
+}else{
+addMessage(data.original,data.from,data.translated)
 }
 
-// Enter key support
-document.getElementById("messageInput")
-    .addEventListener("keydown", function(e) {
-        if (e.key === "Enter") {
-            sendMessage();
-        }
-    });
-
-// =========================
-// Host Start Session
-// =========================
-
-async function startSession() {
-    const res = await fetch("/create-session", { method: "POST" });
-    const data = await res.json();
-
-    sessionId = data.session_id;
-    role = "host";
-
-    document.getElementById("plusBtn").style.display = "none";
-    document.getElementById("headerTitle").innerText = "Host Session";
-
-    addSystemMessage("Session started.");
-    addSystemMessage("Share this link with guest:");
-
-    const link = document.createElement("div");
-    link.classList.add("invite-link");
-    link.innerText = `${window.location.origin}/session/${sessionId}/guest`;
-
-    document.getElementById("messages").appendChild(link);
-
-    connectWebSocket();
 }
+
+}
+
+/* MESSAGE */
+
+function addMessage(originalText,sender,translatedText=null){
+
+const wasNearBottom=isNearBottom()
+
+const msg=document.createElement("div")
+msg.classList.add("message",sender)
+
+const formattedOriginal=originalText.replace(/\n/g,"<br>")
+
+if(translatedText){
+
+const formattedTranslated=translatedText.replace(/\n/g,"<br>")
+
+msg.innerHTML=`
+<div class="original-text">${formattedOriginal}</div>
+<div class="divider"></div>
+<div class="translated-text">${formattedTranslated}</div>
+`
+
+}else{
+
+msg.innerHTML=`<div class="original-text">${formattedOriginal}</div>`
+
+}
+
+messages.appendChild(msg)
+
+if(wasNearBottom){
+
+scrollToBottom(false)
+
+}else{
+
+unread++
+badge.innerText=unread
+scrollBtn.style.display="flex"
+
+}
+
+}
+
+function addSystemMessage(text){
+
+const msg=document.createElement("div")
+msg.classList.add("message","system")
+msg.innerText=text
+messages.appendChild(msg)
+
+}
+
+/* SEND */
+
+function sendMessage(){
+
+if(!input.value||!ws) return
+
+ws.send(input.value)
+
+input.value=""
+input.style.height="auto"
+
+}
+
+input.addEventListener("keydown",(e)=>{
+if(e.key==="Enter"&&!e.shiftKey){
+e.preventDefault()
+sendMessage()
+}
+})
+
+/* HOST START */
+
+async function startSession(){
+
+const res=await fetch("/create-session",{method:"POST"})
+const data=await res.json()
+
+sessionId=data.session_id
+role="host"
+
+document.getElementById("plusBtn").style.display="none"
+document.getElementById("headerTitle").innerText="Host Session"
+
+addSystemMessage("Session started.")
+addSystemMessage("Scan or share this link:")
+
+const link=`${window.location.origin}/session/${sessionId}/guest`
+
+const linkDiv=document.createElement("div")
+linkDiv.classList.add("invite-link")
+linkDiv.innerText=link
+messages.appendChild(linkDiv)
+
+const qrDiv=document.createElement("div")
+qrDiv.classList.add("qr-box")
+messages.appendChild(qrDiv)
+
+new QRCode(qrDiv,{
+text:link,
+width:160,
+height:160
+})
+
+connectWebSocket()
+
+}
+
 </script>
 
 </body>
