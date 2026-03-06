@@ -4,6 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#5f4bd8">
+
+<!-- PWA -->
+<link rel="manifest" href="/static/manifest.json">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Translator">
+<link rel="apple-touch-icon" href="/static/icons/icon-192.png">
 <title>AI Chat Translator</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 
@@ -907,6 +915,17 @@ async function startSession() {
 
   // FIX #7: focus input after session starts
   setTimeout(() => { input.focus() }, 300)
+}
+
+// ─────────────────────────────────────────
+// PWA: Register Service Worker
+// ─────────────────────────────────────────
+
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/static/sw.js")
+      .catch((err) => console.warn("SW registration failed:", err))
+  })
 }
 
 </script>
