@@ -722,7 +722,6 @@ function connectWebSocket() {
       if (data.system === "Session ended.") {
         sessionEnded = true
         hidePending()
-        // Short delay so the user sees the chat before the overlay appears
         setTimeout(() => showEndedOverlay(), 400)
         return
       }
@@ -751,19 +750,13 @@ function connectWebSocket() {
   ws.onerror = () => { /* onclose will handle */ }
 
   ws.onclose = () => {
-    if (sessionEnded) return   // ended intentionally — overlay already shown
+    if (sessionEnded) return
     hidePending()
-
-    // Show reconnect banner
     reconnBanner.style.display = "block"
-
     // Exponential backoff: 1s, 2s, 4s, 8s, max 15s
     const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 15000)
     reconnectAttempts++
-
-    reconnectTimer = setTimeout(() => {
-      connectWebSocket()
-    }, delay)
+    reconnectTimer = setTimeout(() => connectWebSocket(), delay)
   }
 }
 

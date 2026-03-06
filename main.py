@@ -320,3 +320,16 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, role: str):
 
     except WebSocketDisconnect:
         sessions[session_id][role] = None
+
+        # Notify the other party if session is still active
+        if sessions[session_id]["status"] == "active":
+            other_role   = "guest" if role == "host" else "host"
+            other_socket = sessions[session_id][other_role]
+
+            if other_socket:
+                try:
+                    await other_socket.send_json({
+                        "system": "Session ended."
+                    })
+                except Exception:
+                    pass
