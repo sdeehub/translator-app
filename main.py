@@ -17,6 +17,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 API_BASE_URL = os.getenv("API_BASE_URL")
+MODEL = os.getenv("MODEL", "gpt-4o")  # fallback to gpt-4o if not set
 
 client = AsyncOpenAI(
     base_url=API_BASE_URL,
@@ -138,7 +139,7 @@ async def translate_text(text: str, source_language: str, target_language: str):
     """
 
     response = await client.chat.completions.create(
-        model="gpt-4o",  # Best balance for real-time translation
+        model=MODEL,  # Set as env var
         temperature=0.0,
         messages=[
             {
