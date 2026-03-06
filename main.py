@@ -232,9 +232,23 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, role: str):
                 full_language = LANGUAGE_MAP[code]
                 sessions[session_id][f"{role}_lang"] = full_language
 
+                host_lang  = sessions[session_id]["host_lang"]
+                guest_lang = sessions[session_id]["guest_lang"]
+
+                # Notify the sender
                 await websocket.send_json({
-                    "system": f"Your language changed to {full_language}"
+                    "system": f"Your language changed to {full_language}",
+                    "lang_update": {"host_lang": host_lang, "guest_lang": guest_lang}
                 })
+
+                # Sync the other side so their badge updates too
+                other_role   = "guest" if role == "host" else "host"
+                other_socket = sessions[session_id][other_role]
+                if other_socket:
+                    await other_socket.send_json({
+                        "system": f"{'Host' if role == 'host' else 'Guest'} language changed to {full_language}",
+                        "lang_update": {"host_lang": host_lang, "guest_lang": guest_lang}
+                    })
                 continue
 
             # =========================
@@ -252,14 +266,19 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, role: str):
                 full_language = LANGUAGE_MAP[code]
                 sessions[session_id]["guest_lang"] = full_language
 
+                host_lang  = sessions[session_id]["host_lang"]
+                guest_lang = sessions[session_id]["guest_lang"]
+
                 guest_socket = sessions[session_id]["guest"]
                 if guest_socket:
                     await guest_socket.send_json({
-                        "system": f"Your language was set to {full_language} by host"
+                        "system": f"Your language was set to {full_language} by host",
+                        "lang_update": {"host_lang": host_lang, "guest_lang": guest_lang}
                     })
 
                 await websocket.send_json({
-                    "system": f"Guest language changed to {full_language}"
+                    "system": f"Guest language changed to {full_language}",
+                    "lang_update": {"host_lang": host_lang, "guest_lang": guest_lang}
                 })
                 continue
 
