@@ -13,21 +13,29 @@ import re
 
 app = FastAPI()
 
-base_dir = Path(__file__).resolve().parent
-load_dotenv(dotenv_path=base_dir / ".env")
-
 # Serve static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# Safely load the .env file locally, and skip it silently on Render
+try:
+    base_dir = Path(__file__).resolve().parent
+    dotenv_file = base_dir / ".env"
+    if dotenv_file.exists():
+        load_dotenv(dotenv_path=dotenv_file)
+        print("💡 Local .env file loaded successfully.")
+except Exception as e:
+    print(f"⚠️ Skipping local file configuration setup: {e}")
+
+# Read variables directly from active operating system environment memory
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+API_BASE_URL = os.getenv("API_BASE_URL")
+MODEL = os.getenv("MODEL", "openrouter/free")  # Matches your OpenRouter free model choice
+
+LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
 
 # -------------------------
 # CONFIG
 # -------------------------
-
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-API_BASE_URL = os.getenv("API_BASE_URL")
-MODEL = os.getenv("MODEL", "gpt-4o")  # fallback to gpt-4o if not set
-
-LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
 
 client = AsyncOpenAI(
     base_url=API_BASE_URL,
