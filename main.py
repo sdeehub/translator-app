@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 import httpx
 import uuid
 import os
+import re
 
 app = FastAPI()
 
@@ -349,53 +350,67 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, role: str):
 async def line_webhook(request: Request, background_tasks: BackgroundTasks):
     payload = await request.json()
     events = payload.get("events", [])
-    
+
     for event in events:
-        # Check if the incoming event is a text message sent by a user
         if event.get("type") == "message" and event["message"]["type"] == "text":
-            user_id = event["source"]["userId"]
-            user_text = event["message"]["text"]
+            user_text = event["message"]["text"].strip()
             reply_token = event["replyToken"]
             
-            # Use BackgroundTasks so the LINE app gets an instant 200 OK 
-            # while your AI processes the translation in the background
-            background_tasks.add_task(handle_translation_and_reply, user_id, user_text, reply_token)
-            
+            # Map unique identifier based on incoming source scope space
+            source_id = event["source"].get("groupId") or event["source"].get("roomId") or event["source"]["userId"]
+
+            # Command 1: View Supported Code Menu Matrix (/? )
+            if user_text == "/?":
+                help_text = "🌐 Supported Language Codes:\n" + "\n".join([f"• /{code} : {name}" for code, name in LANGUAGE_MAP.items()])
+                help_text += "\n\nSet your group chat routing via: /en-th or /my-th"
+                background_tasks.add_task(send_line_group_reply, reply_token, help_text)
+                continue
+
+            # Command 2: Dynamic Pair Reconfiguration (e.g., /my-th)
+            command_match = re.match(r"^/([a-z]{2})-([a-z]{2})$", user_text.lower())
+            if command_match:
+                src, tgt = command_match.group(1), command_match.group(2)
+                
+                # Check authorization matching indices against your existing LANGUAGE_MAP dict
+                if src in LANGUAGE_MAP and tgt in LANGUAGE_MAP:
+                    # Save configuration safely using structural keys that won't conflict with Web UI logic
+                    sessions[source_id] = {
+                        "host_lang": LANGUAGE_MAP[src],
+                        "guest_lang": LANGUAGE_MAP[tgt],
+                        "is_line_group": True
+                    }
+                    confirm_msg = f"✅ Translation configured: {LANGUAGE_MAP[src]} ↔️ {LANGUAGE_MAP[tgt]}"
+                else:
+                    confirm_msg = "❌ Invalid language configuration path. Send /? to view active options."
+                    
+                background_tasks.add_task(send_line_group_reply, reply_token, confirm_msg)
+                continue
+
+            # Default: Run Stateless Group Translation
+            background_tasks.add_task(handle_line_group_stream, source_id, user_text, reply_token)
+
     return "OK", 200
 
-async def handle_translation_and_reply(user_id: str, text: str, reply_token: str):
+async def handle_line_group_stream(source_id: str, text: str, reply_token: str):
     try:
-        # 1. TRANSLATE: Call your existing LiteLLM translation logic
-        # (Replace this placeholder with whatever your app uses to call LiteLLM)
-        # translated_text = f"[AI Translation]: {text}"
-        translated_text = await translate_text(
-            text=text, 
-            source_language="Thai", 
-            target_language="Burmese"
-        )
-
-        # Log it to your local Uvicorn terminal so you can trace it
-        print(f"[Engine] Original ({text}) -> Translated ({translated_text})")
-
-        # 2. CHAT HISTORY: Save both original and translated text to your active session
-        # (This will feed directly into your Host Dashboard view later)
+        # Default session fallback if they haven't run commands yet
+        group_config = sessions.get(source_id, {
+            "host_lang": "Burmese",
+            "guest_lang": "Thai"
+        })
         
-        # 3. LINE REPLY: Automatically push the translation back to the user's phone
-        line_url = "https://api.line.me/v2/bot/message/reply"
-        clean_token = str(LINE_CHANNEL_ACCESS_TOKEN).strip()
+        lang_a = group_config["host_lang"]
+        lang_b = group_config["guest_lang"]
 
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {clean_token}"
-        }
-        
-        data = {
-            "replyToken": reply_token,
-            "messages": [{"type": "text", "text": translated_text}]
-        }
-        
-        async with httpx.AsyncClient(follow_redirects=True) as client_http:
-            response = await client_http.post(line_url, json=data, headers=headers)
-            
+        # 1. Call the bi-directional engine to translate fluently
+        translated_text = await translate_text_bidirectional(text, lang_a, lang_b)
+
+        # 2. FORMAT TRANSMISSION: Single compact inline format
+        # Uses standard strip() to remove any trailing system line breaks
+        combined_payload = f"{text.strip()} | {translated_text.strip()}"
+
+        # 3. Deliver back to the LINE group chat
+        await send_line_group_reply(reply_token, combined_payload)
+
     except Exception as e:
-        print(f"Error handling LINE message: {e}")
+        print(f"Error executing inline group translation layout: {e}")
