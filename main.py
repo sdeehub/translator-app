@@ -414,3 +414,50 @@ async def handle_line_group_stream(source_id: str, text: str, reply_token: str):
 
     except Exception as e:
         print(f"Error executing inline group translation layout: {e}")
+
+async def translate_text_bidirectional(text: str, lang_a: str, lang_b: str):
+    """
+    Bi-directional translator that auto-detects language inputs 
+    and handles two-way group chat communication out of the box.
+    """
+    response = await client.chat.completions.create(
+        model=MODEL,
+        temperature=0.0,
+        messages=[
+            {
+                "role": "system",
+                "content": f"""
+You are an invisible high-precision real-time translation server engine for a chat room.
+The active matching language configurations are {lang_a} and {lang_b}.
+
+RULES:
+1. AUTO-DETECT: Analyze whether the incoming text string input is written in {lang_a} or {lang_b}.
+2. TRANSLATE: 
+   - If the input text is written in {lang_a}, translate it strictly to {lang_b}.
+   - If the input text is written in {lang_b}, translate it strictly to {lang_a}.
+3. Properties: Preserve exact contextual definitions, informal tone, and any emojis.
+4. Output ONLY the raw final translated text string. Do NOT add meta commentary, status info, notes, or apologies.
+5. If the language profile is ambiguous or mixed, default to translating to {lang_b} as a safe fallback option.
+"""
+            },
+            {"role": "user", "content": text}
+        ],
+    )
+    return response.choices[0].message.content.strip()
+
+
+async def send_line_group_reply(reply_token: str, text_content: str):
+    line_url = "https://line.me"
+    clean_token = str(LINE_CHANNEL_ACCESS_TOKEN).strip()
+    
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {clean_token}"
+    }
+    data = {
+        "replyToken": reply_token,
+        "messages": [{"type": "text", "text": text_content}]
+    }
+
+    async with httpx.AsyncClient(follow_redirects=True) as client_http:
+        await client_http.post(line_url, json=data, headers=headers)
