@@ -5,7 +5,6 @@ from pydantic import BaseModel
 from openai import AsyncOpenAI
 from pathlib import Path
 from dotenv import load_dotenv
-
 import httpx
 import uuid
 import os
@@ -13,10 +12,9 @@ import re
 
 app = FastAPI()
 
-# Serve static files
-app.mount("/static", StaticFiles(directory="static"), name="static")
-
-# Safely load the .env file locally, and skip it silently on Render
+# ---------------------------------------------------------------------
+# SECURE CONFIG CONFIGURATION LOADING (Local vs Production)
+# ---------------------------------------------------------------------
 try:
     base_dir = Path(__file__).resolve().parent
     dotenv_file = base_dir / ".env"
@@ -29,331 +27,165 @@ except Exception as e:
 # Read variables directly from active operating system environment memory
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 API_BASE_URL = os.getenv("API_BASE_URL")
-MODEL = os.getenv("MODEL", "openrouter/free")  # Matches your OpenRouter free model choice
-
+MODEL = os.getenv("MODEL", "openrouter/free")  # Matches your OpenRouter model choice
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
 
-# -------------------------
-# CONFIG
-# -------------------------
-
+# Initialize your core AsyncOpenAI engine client
 client = AsyncOpenAI(
     base_url=API_BASE_URL,
     api_key=OPENAI_API_KEY
 )
 
-# -------------------------
-# IN-MEMORY SESSION STORE
-# -------------------------
+# Serve static files for Web UI
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# ---------------------------------------------------------------------
+# GLOBAL VARIABLE STORAGE MATCHING ORIGINAL ARCHITECTURE
+# ---------------------------------------------------------------------
+LANGUAGE_MAP = {
+    "my": "Burmese",
+    "th": "Thai",
+    "en": "English",
+    "zh": "Chinese",
+    "ja": "Japanese",
+    "fr": "French"
+}
 
 sessions = {}
 
-# -------------------------
-# ISO Language Map
-# -------------------------
+class LanguageUpdate(BaseModel):
+    host_lang: str
+    guest_lang: str
 
-LANGUAGE_MAP = {
-    "en": "English",
-    "fr": "French",
-    "es": "Spanish",
-    "th": "Thai",
-    "ms": "Malay",
-    "id": "Indonesian",
-    "de": "German",
-    "it": "Italian",
-    "ja": "Japanese",
-    "ko": "Korean",
-    "zh": "Chinese",
-    "pt": "Portuguese",
-    "ru": "Russian",
-    "hu": "Hungarian",
-    "lo": "Lao",
-    "km": "Central Khmer",
-    "my": "Burmese"
-}
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections = {}
 
-# -------------------------
-# HOME PAGE
-# -------------------------
+    async def connect(self, session_id: str, role: str, websocket: WebSocket):
+        await websocket.accept()
+        if session_id not in self.active_connections:
+            self.active_connections[session_id] = {"host": None, "guest": None}
+        self.active_connections[session_id][role] = websocket
 
-@app.get("/", response_class=HTMLResponse)
-async def home():
+    def disconnect(self, session_id: str, role: str):
+        if session_id in self.active_connections:
+            self.active_connections[session_id][role] = None
+            if not self.active_connections[session_id]["host"] and not self.active_connections[session_id]["guest"]:
+                del self.active_connections[session_id]
+
+    async def send_personal_message(self, message: str, websocket: WebSocket):
+        await websocket.send_text(message)
+
+    async def broadcast(self, session_id: str, sender_role: str, message: str):
+        if session_id in self.active_connections:
+            for role, ws in self.active_connections[session_id].items():
+                if ws:
+                    await ws.send_json({"sender": sender_role, "message": message})
+
+manager = ConnectionManager()
+
+# ---------------------------------------------------------------------
+# ORIGINAL WEB APPLICATIONS ROUTES & ENDPOINTS
+# ---------------------------------------------------------------------
+@app.get("/")
+async def get_index():
     return FileResponse("static/index.html")
 
-# -------------------------
-# HEALTH CHECK (optional)
-# -------------------------
-
 @app.get("/health")
-async def health():
-    return {"status": "ok"}
+async def health_check():
+    return {"status": "healthy"}
 
-# -------------------------
-# CREATE SESSION
-# -------------------------
+@app.get("/session/{session_id}/host")
+async def get_host(session_id: str):
+    return FileResponse("static/host.html")
 
-@app.post("/create-session")
-async def create_session():
-    session_id = str(uuid.uuid4())[:8]
-
-    sessions[session_id] = {
-        "host": None,
-        "guest": None,
-        "status": "active",
-        "host_lang": "Thai",       # Default host language
-        "guest_lang": "Spanish"    # Default guest language
-    }
-
-    return {"session_id": session_id}
-
-# -------------------------
-# SERVE SESSION UI
-# -------------------------
-
-@app.get("/session/{session_id}/{role}", response_class=HTMLResponse)
-async def serve_session(session_id: str, role: str):
-
-    if role not in ["guest"]:
-        return HTMLResponse("Invalid role", status_code=400)
-
-    if session_id not in sessions:
-        return HTMLResponse("Invalid session ID", status_code=400)
-
-    with open("static/index.html", encoding="utf-8") as f:
-        html = f.read()
-
-    return (
-        html.replace("SESSION_ID", session_id)
-            .replace("ROLE", role)
-    )
-
-# -------------------------
-# UPDATE LANGUAGE
-# -------------------------
-
-class LanguageUpdate(BaseModel):
-    role: str
-    language: str
+@app.get("/session/{session_id}/guest")
+async def get_guest(session_id: str):
+    return FileResponse("static/guest.html")
 
 @app.post("/set-language/{session_id}")
-async def set_language(session_id: str, payload: LanguageUpdate):
-
+async def set_language(session_id: str, langs: LanguageUpdate):
     if session_id not in sessions:
-        return {"error": "Invalid session"}
+        sessions[session_id] = {}
+    sessions[session_id]["host_lang"] = langs.host_lang
+    sessions[session_id]["guest_lang"] = langs.guest_lang
+    return {"status": "success"}
 
-    if payload.role not in ["host", "guest"]:
-        return {"error": "Invalid role"}
-
-    sessions[session_id][f"{payload.role}_lang"] = payload.language
-
-    return {"status": "updated"}
-
-# -------------------------
-# HIGH-PRECISION TRANSLATION
-# -------------------------
-
+# ---------------------------------------------------------------------
+# ORIGINAL TRANSLATION ENGINE (Deterministic 1-Way for Web UI)
+# ---------------------------------------------------------------------
 async def translate_text(text: str, source_language: str, target_language: str):
-    """
-    Deterministic translation engine for real-time chat.
-    """
-
     response = await client.chat.completions.create(
-        model=MODEL,  # Set as env var
+        model=MODEL,
         temperature=0.0,
         messages=[
             {
                 "role": "system",
-                "content": f"""
-You are a high-precision real-time translation engine.
-
-Translate strictly from {source_language} to {target_language}.
-
-RULES:
-- Preserve tone and informality.
-- Preserve emojis.
-- Do NOT explain.
-- Do NOT answer.
-- Do NOT add commentary.
-- Do NOT apologize.
-- Do NOT mention training data.
-- Do NOT change meaning.
-- Output ONLY the translated text.
-- If slang appears, translate naturally.
-"""
+                "content": f"You are a high-precision real-time translation engine. Translate strictly from {source_language} to {target_language}. RULES: Preserve tone, informality, and emojis. Do NOT explain, answer, comment, or apologize. Output ONLY the translated text."
             },
-            {
-                "role": "user",
-                "content": text
-            }
+            {"role": "user", "content": text}
         ],
     )
-
     return response.choices[0].message.content.strip()
 
-# -------------------------
-# WEBSOCKET ENDPOINT
-# -------------------------
+# ---------------------------------------------------------------------
+# NEW TRANSLATION ENGINE (Bi-Directional for LINE Group Auto-Detect)
+# ---------------------------------------------------------------------
+async def translate_text_bidirectional(text: str, lang_a: str, lang_b: str):
+    response = await client.chat.completions.create(
+        model=MODEL,
+        temperature=0.0,
+        messages=[
+            {
+                "role": "system",
+                "content": f"""You are an invisible high-precision real-time translation server engine for a chat room.
+The active matching language configurations are {lang_a} and {lang_b}.
 
+RULES:
+1. AUTO-DETECT: Analyze whether the incoming text string input is written in {lang_a} or {lang_b}.
+2. TRANSLATE: 
+   - If the input text is written in {lang_a}, translate it strictly to {lang_b}.
+   - If the input text is written in {lang_b}, translate it strictly to {lang_a}.
+3. Properties: Preserve exact contextual definitions, informal tone, and any emojis.
+4. Output ONLY the raw final translated text string. Do NOT add meta commentary, status info, notes, or apologies.
+5. If the language profile is ambiguous or mixed, default to translating to {lang_b} as a safe fallback option."""
+            },
+            {"role": "user", "content": text}
+        ],
+    )
+    return response.choices[0].message.content.strip()
+
+# ---------------------------------------------------------------------
+# ORIGINAL WEB UI WEBSOCKET ROUTING HANDLER LOOP
+# ---------------------------------------------------------------------
 @app.websocket("/ws/{session_id}/{role}")
 async def websocket_endpoint(websocket: WebSocket, session_id: str, role: str):
-
-    await websocket.accept()
-
-    if session_id not in sessions:
-        await websocket.send_json({"error": "Invalid session"})
-        await websocket.close()
-        return
-
-    if role not in ["host", "guest"]:
-        await websocket.send_json({"error": "Invalid role"})
-        await websocket.close()
-        return
-
-    sessions[session_id][role] = websocket
-
+    await manager.connect(session_id, role, websocket)
     try:
         while True:
             data = await websocket.receive_text()
-            command = data.strip().lower()
-
-            # =========================
-            # /end
-            # =========================
-            if command == "/end":
-                sessions[session_id]["status"] = "closed"
-
-                other_role = "guest" if role == "host" else "host"
-                other_socket = sessions[session_id][other_role]
-
-                if other_socket:
-                    await other_socket.send_json({
-                        "system": "Session ended."
-                    })
-                    await other_socket.close()
-
-                await websocket.send_json({
-                    "system": "Session ended."
-                })
-                await websocket.close()
-                break
+            if data.startswith("/"):
+                if data == "/end":
+                    await manager.broadcast(session_id, "system", "Session ended by user.")
+                    break
+                elif data.startswith("/lang "):
+                    parts = data.split(" ", 2)
+                    if len(parts) == 3:
+                        await manager.broadcast(session_id, "system", f"Language updated to {parts[1]} and {parts[2]}")
+                    continue
             
-            # =========================
-            # /lang <iso_code>
-            # =========================
-            if command.startswith("/lang "):
-                code = data.split(" ", 1)[1].strip().lower()
-
-                if code not in LANGUAGE_MAP:
-                    await websocket.send_json({
-                        "system": "Invalid language code."
-                    })
-                    continue
-
-                full_language = LANGUAGE_MAP[code]
-                sessions[session_id][f"{role}_lang"] = full_language
-
-                host_lang  = sessions[session_id]["host_lang"]
-                guest_lang = sessions[session_id]["guest_lang"]
-
-                # Notify the sender
-                await websocket.send_json({
-                    "system": f"Your language changed to {full_language}",
-                    "lang_update": {"host_lang": host_lang, "guest_lang": guest_lang}
-                })
-
-                # Sync the other side so their badge updates too
-                other_role   = "guest" if role == "host" else "host"
-                other_socket = sessions[session_id][other_role]
-                if other_socket:
-                    await other_socket.send_json({
-                        "system": f"{'Host' if role == 'host' else 'Guest'} language changed to {full_language}",
-                        "lang_update": {"host_lang": host_lang, "guest_lang": guest_lang}
-                    })
-                continue
-
-            # =========================
-            # /guest <iso_code>
-            # =========================
-            if command.startswith("/guest ") and role == "host":
-                code = data.split(" ", 1)[1].strip().lower()
-
-                if code not in LANGUAGE_MAP:
-                    await websocket.send_json({
-                        "system": "Invalid language code."
-                    })
-                    continue
-
-                full_language = LANGUAGE_MAP[code]
-                sessions[session_id]["guest_lang"] = full_language
-
-                host_lang  = sessions[session_id]["host_lang"]
-                guest_lang = sessions[session_id]["guest_lang"]
-
-                guest_socket = sessions[session_id]["guest"]
-                if guest_socket:
-                    await guest_socket.send_json({
-                        "system": f"Your language was set to {full_language} by host",
-                        "lang_update": {"host_lang": host_lang, "guest_lang": guest_lang}
-                    })
-
-                await websocket.send_json({
-                    "system": f"Guest language changed to {full_language}",
-                    "lang_update": {"host_lang": host_lang, "guest_lang": guest_lang}
-                })
-                continue
-
-            # =========================
-            # Ignore if closed
-            # =========================
-            if sessions[session_id]["status"] != "active":
-                continue
-
-            other_role = "guest" if role == "host" else "host"
-            other_socket = sessions[session_id][other_role]
-
-            if not other_socket:
-                continue
-
-            # Determine languages
-            if role == "host":
-                source_lang = sessions[session_id]["host_lang"]
-                target_lang = sessions[session_id]["guest_lang"]
-            else:
-                source_lang = sessions[session_id]["guest_lang"]
-                target_lang = sessions[session_id]["host_lang"]
-
-            # Translate
-            translated = await translate_text(
-                data,
-                source_lang,
-                target_lang
-            )
-
-            payload = {
-                "original": data,
-                "translated": translated,
-                "from": role
-            }
-
-            await other_socket.send_json(payload)
-            await websocket.send_json(payload)
-
+            session_config = sessions.get(session_id, {"host_lang": "English", "guest_lang": "Thai"})
+            source_lang = session_config["host_lang"] if role == "host" else session_config["guest_lang"]
+            target_lang = session_config["guest_lang"] if role == "host" else session_config["host_lang"]
+            
+            translated = await translate_text(data, source_lang, target_lang)
+            await manager.broadcast(session_id, role, f"{data} | {translated}")
     except WebSocketDisconnect:
-        sessions[session_id][role] = None
+        manager.disconnect(session_id, role)
 
-        # Notify the other party if session is still active
-        if sessions[session_id]["status"] == "active":
-            other_role   = "guest" if role == "host" else "host"
-            other_socket = sessions[session_id][other_role]
-
-            if other_socket:
-                try:
-                    await other_socket.send_json({
-                        "system": "Session ended."
-                    })
-                except Exception:
-                    pass
-
+# ---------------------------------------------------------------------
+# NEW LIVE LINE OFFICIAL ACCOUNT WEBHOOK ENTRY HANDLER
+# ---------------------------------------------------------------------
 @app.post("/webhook")
 async def line_webhook(request: Request, background_tasks: BackgroundTasks):
     payload = await request.json()
@@ -364,7 +196,7 @@ async def line_webhook(request: Request, background_tasks: BackgroundTasks):
             user_text = event["message"]["text"].strip()
             reply_token = event["replyToken"]
             
-            # Map unique identifier based on incoming source scope space
+            # Map unique identifier based on incoming source scope space (Group vs Individual)
             source_id = event["source"].get("groupId") or event["source"].get("roomId") or event["source"]["userId"]
 
             # Command 1: View Supported Code Menu Matrix (/? )
@@ -378,10 +210,7 @@ async def line_webhook(request: Request, background_tasks: BackgroundTasks):
             command_match = re.match(r"^/([a-z]{2})-([a-z]{2})$", user_text.lower())
             if command_match:
                 src, tgt = command_match.group(1), command_match.group(2)
-                
-                # Check authorization matching indices against your existing LANGUAGE_MAP dict
                 if src in LANGUAGE_MAP and tgt in LANGUAGE_MAP:
-                    # Save configuration safely using structural keys that won't conflict with Web UI logic
                     sessions[source_id] = {
                         "host_lang": LANGUAGE_MAP[src],
                         "guest_lang": LANGUAGE_MAP[tgt],
@@ -390,18 +219,17 @@ async def line_webhook(request: Request, background_tasks: BackgroundTasks):
                     confirm_msg = f"✅ Translation configured: {LANGUAGE_MAP[src]} ↔️ {LANGUAGE_MAP[tgt]}"
                 else:
                     confirm_msg = "❌ Invalid language configuration path. Send /? to view active options."
-                    
                 background_tasks.add_task(send_line_group_reply, reply_token, confirm_msg)
                 continue
 
-            # Default: Run Stateless Group Translation
+            # Default text input: Dispatched onto stateless translation loops
             background_tasks.add_task(handle_line_group_stream, source_id, user_text, reply_token)
 
     return "OK", 200
 
 async def handle_line_group_stream(source_id: str, text: str, reply_token: str):
     try:
-        # Default session fallback if they haven't run commands yet
+        # Default session fallback to Burmese <-> Thai if no group config command run yet
         group_config = sessions.get(source_id, {
             "host_lang": "Burmese",
             "guest_lang": "Thai"
@@ -410,52 +238,24 @@ async def handle_line_group_stream(source_id: str, text: str, reply_token: str):
         lang_a = group_config["host_lang"]
         lang_b = group_config["guest_lang"]
 
-        # 1. Call the bi-directional engine to translate fluently
+        # Call the new bi-directional engine to translate fluently in both directions
         translated_text = await translate_text_bidirectional(text, lang_a, lang_b)
-
-        # 2. FORMAT TRANSMISSION: Single compact inline format
-        # Uses standard strip() to remove any trailing system line breaks
+        
+        # Format visually compact inline string subtitle payload matching design choices
         combined_payload = f"{text.strip()} | {translated_text.strip()}"
 
-        # 3. Deliver back to the LINE group chat
+        print(f"[LINE Group] Intercepted ({text}) -> Dispatched ({combined_payload})")
         await send_line_group_reply(reply_token, combined_payload)
 
     except Exception as e:
-        print(f"Error executing inline group translation layout: {e}")
-
-async def translate_text_bidirectional(text: str, lang_a: str, lang_b: str):
-    """
-    Bi-directional translator that auto-detects language inputs 
-    and handles two-way group chat communication out of the box.
-    """
-    response = await client.chat.completions.create(
-        model=MODEL,
-        temperature=0.0,
-        messages=[
-            {
-                "role": "system",
-                "content": f"""
-You are an invisible high-precision real-time translation server engine for a chat room.
-The active matching language configurations are {lang_a} and {lang_b}.
-
-RULES:
-1. AUTO-DETECT: Analyze whether the incoming text string input is written in {lang_a} or {lang_b}.
-2. TRANSLATE: 
-   - If the input text is written in {lang_a}, translate it strictly to {lang_b}.
-   - If the input text is written in {lang_b}, translate it strictly to {lang_a}.
-3. Properties: Preserve exact contextual definitions, informal tone, and any emojis.
-4. Output ONLY the raw final translated text string. Do NOT add meta commentary, status info, notes, or apologies.
-5. If the language profile is ambiguous or mixed, default to translating to {lang_b} as a safe fallback option.
-"""
-            },
-            {"role": "user", "content": text}
-        ],
-    )
-    return response.choices[0].message.content.strip()
-
+        print(f"Error executing group processing pipeline: {e}")
 
 async def send_line_group_reply(reply_token: str, text_content: str):
-    line_url = "https://line.me"
+    if not LINE_CHANNEL_ACCESS_TOKEN or LINE_CHANNEL_ACCESS_TOKEN == "None":
+        print("❌ ERROR: Cannot reply to LINE. LINE_CHANNEL_ACCESS_TOKEN variable is missing or None inside environment.")
+        return
+
+    line_url = "https://api.line.me/v2/bot/message/reply"
     clean_token = str(LINE_CHANNEL_ACCESS_TOKEN).strip()
     
     headers = {
@@ -468,4 +268,5 @@ async def send_line_group_reply(reply_token: str, text_content: str):
     }
 
     async with httpx.AsyncClient(follow_redirects=True) as client_http:
-        await client_http.post(line_url, json=data, headers=headers)
+        response = await client_http.post(line_url, json=data, headers=headers)
+        print(f"[LINE Outbound] Status Code: {response.status_code} - Body: {response.text}")
