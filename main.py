@@ -1,12 +1,19 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, BackgroundTasks
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from openai import AsyncOpenAI
+from pathlib import Path
+from dotenv import load_dotenv
+
+import httpx
 import uuid
 import os
 
 app = FastAPI()
+
+base_dir = Path(__file__).resolve().parent
+load_dotenv(dotenv_path=base_dir / ".env")
 
 # Serve static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -15,9 +22,26 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 # CONFIG
 # -------------------------
 
+# 🔍 ADD THIS SAFE ENV PRINT BLOCK:
+print("=" * 40)
+print("     CURRENT ENV VARIABLES LOADING")
+print("=" * 40)
+for key, value in os.environ.items():
+    # Only print variables matching your project keys
+    if key in ["API_BASE_URL", "MODEL", "OPENAI_API_KEY", "LINE_CHANNEL_ACCESS_TOKEN"]:
+        if value:
+            # Mask the secret keys so only the first 6 characters show
+            masked_value = f"{value[:6]}... [Length: {len(value)}]" if "KEY" in key or "TOKEN" in key else value
+            print(f"✅ {key} = {masked_value}")
+        else:
+            print(f"❌ {key} = Is loaded as EMPTY / None!")
+print("=" * 40)
+
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 API_BASE_URL = os.getenv("API_BASE_URL")
 MODEL = os.getenv("MODEL", "gpt-4o")  # fallback to gpt-4o if not set
+
+LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
 
 client = AsyncOpenAI(
     base_url=API_BASE_URL,
@@ -50,7 +74,8 @@ LANGUAGE_MAP = {
     "ru": "Russian",
     "hu": "Hungarian",
     "lo": "Lao",
-    "km": "Central Khmer"
+    "km": "Central Khmer",
+    "my": "Burmese"
 }
 
 # -------------------------
@@ -334,3 +359,66 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, role: str):
                     })
                 except Exception:
                     pass
+
+@app.post("/webhook")
+async def line_webhook(request: Request, background_tasks: BackgroundTasks):
+    payload = await request.json()
+    events = payload.get("events", [])
+    
+    for event in events:
+        # Check if the incoming event is a text message sent by a user
+        if event.get("type") == "message" and event["message"]["type"] == "text":
+            user_id = event["source"]["userId"]
+            user_text = event["message"]["text"]
+            reply_token = event["replyToken"]
+            
+            # Use BackgroundTasks so the LINE app gets an instant 200 OK 
+            # while your AI processes the translation in the background
+            background_tasks.add_task(handle_translation_and_reply, user_id, user_text, reply_token)
+            
+    return "OK", 200
+
+async def handle_translation_and_reply(user_id: str, text: str, reply_token: str):
+    try:
+        # 1. TRANSLATE: Call your existing LiteLLM translation logic
+        # (Replace this placeholder with whatever your app uses to call LiteLLM)
+        # translated_text = f"[AI Translation]: {text}"
+        translated_text = await translate_text(
+            text=text, 
+            source_language="English", 
+            target_language="Thai"
+        )
+
+        # Log it to your local Uvicorn terminal so you can trace it
+        print(f"[Engine] Original ({text}) -> Translated ({translated_text})")
+
+        # 2. CHAT HISTORY: Save both original and translated text to your active session
+        # (This will feed directly into your Host Dashboard view later)
+        
+        # 3. LINE REPLY: Automatically push the translation back to the user's phone
+        line_url = "https://api.line.me/v2/bot/message/reply"
+        clean_token = str(LINE_CHANNEL_ACCESS_TOKEN).strip()
+
+        # 🔍 ADD THESE DEBUG LINES HERE:
+        print(f"--- TOKEN DEBUG ---")
+        print(f"Total Character Length: {len(clean_token)}")
+        print(f"Starts with: '{clean_token[:15]}'")
+        print(f"Ends with:   '{clean_token[-15:]}'")
+        print(f"-------------------")
+        
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {clean_token}"
+        }
+        
+        data = {
+            "replyToken": reply_token,
+            "messages": [{"type": "text", "text": translated_text}]
+        }
+        
+        async with httpx.AsyncClient(follow_redirects=True) as client_http:
+            response = await client_http.post(line_url, json=data, headers=headers)
+            print(f"LINE Response: {response.status_code} - {response.text}")
+            
+    except Exception as e:
+        print(f"Error handling LINE message: {e}")
