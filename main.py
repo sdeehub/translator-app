@@ -22,21 +22,6 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 # CONFIG
 # -------------------------
 
-# 🔍 ADD THIS SAFE ENV PRINT BLOCK:
-print("=" * 40)
-print("     CURRENT ENV VARIABLES LOADING")
-print("=" * 40)
-for key, value in os.environ.items():
-    # Only print variables matching your project keys
-    if key in ["API_BASE_URL", "MODEL", "OPENAI_API_KEY", "LINE_CHANNEL_ACCESS_TOKEN"]:
-        if value:
-            # Mask the secret keys so only the first 6 characters show
-            masked_value = f"{value[:6]}... [Length: {len(value)}]" if "KEY" in key or "TOKEN" in key else value
-            print(f"✅ {key} = {masked_value}")
-        else:
-            print(f"❌ {key} = Is loaded as EMPTY / None!")
-print("=" * 40)
-
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 API_BASE_URL = os.getenv("API_BASE_URL")
 MODEL = os.getenv("MODEL", "gpt-4o")  # fallback to gpt-4o if not set
@@ -385,8 +370,8 @@ async def handle_translation_and_reply(user_id: str, text: str, reply_token: str
         # translated_text = f"[AI Translation]: {text}"
         translated_text = await translate_text(
             text=text, 
-            source_language="English", 
-            target_language="Thai"
+            source_language="Thai", 
+            target_language="Burmese"
         )
 
         # Log it to your local Uvicorn terminal so you can trace it
@@ -399,13 +384,6 @@ async def handle_translation_and_reply(user_id: str, text: str, reply_token: str
         line_url = "https://api.line.me/v2/bot/message/reply"
         clean_token = str(LINE_CHANNEL_ACCESS_TOKEN).strip()
 
-        # 🔍 ADD THESE DEBUG LINES HERE:
-        print(f"--- TOKEN DEBUG ---")
-        print(f"Total Character Length: {len(clean_token)}")
-        print(f"Starts with: '{clean_token[:15]}'")
-        print(f"Ends with:   '{clean_token[-15:]}'")
-        print(f"-------------------")
-        
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {clean_token}"
@@ -418,7 +396,6 @@ async def handle_translation_and_reply(user_id: str, text: str, reply_token: str
         
         async with httpx.AsyncClient(follow_redirects=True) as client_http:
             response = await client_http.post(line_url, json=data, headers=headers)
-            print(f"LINE Response: {response.status_code} - {response.text}")
             
     except Exception as e:
         print(f"Error handling LINE message: {e}")
